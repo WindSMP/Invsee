@@ -8,6 +8,7 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
@@ -29,7 +30,6 @@ import static net.kyori.adventure.text.format.NamedTextColor.GOLD;
 import static net.kyori.adventure.text.format.NamedTextColor.RED;
 import static net.kyori.adventure.text.format.TextDecoration.ITALIC;
 
-
 public class InvseeSession implements Session {
 
     private final UUID uuid;
@@ -39,14 +39,15 @@ public class InvseeSession implements Session {
     private final Cache<UUID, Player> playerCache = CacheBuilder.newBuilder()
             .expireAfterAccess(10, TimeUnit.SECONDS)
             .build();
+    private Location location;
 
     public InvseeSession(OfflinePlayer offlinePlayer) {
         this.uuid = offlinePlayer.getUniqueId();
         this.subscribers = ConcurrentHashMap.newKeySet();
+        this.location = offlinePlayer.getLocation();
 
         String name = offlinePlayer.getName() == null ? "unknown" : offlinePlayer.getName();
         this.inventory = InvseePlugin.getInstance().getServer().createInventory(this, 45, text(name).append(text("'s inventory")));
-
     }
 
     @Override
@@ -70,13 +71,17 @@ public class InvseeSession implements Session {
         }
 
         Optional<Player> player = getPlayerOffline(offlinePlayer);
-
         return player.map(Player::getInventory).orElse(null);
     }
 
     @Override
     public void removeSubscriber(UUID subscriber) {
         this.subscribers.remove(subscriber);
+    }
+
+    @Override
+    public boolean hasSubscriber(UUID uuid) {
+        return this.subscribers.contains(uuid);
     }
 
     @Override
@@ -112,11 +117,6 @@ public class InvseeSession implements Session {
     }
 
     @Override
-    public boolean hasSubscriber(UUID uuid) {
-        return this.subscribers.contains(uuid);
-    }
-
-    @Override
     public void updateObservedInventory() {
         update(() -> {
             OfflinePlayer offlinePlayer = InvseePlugin.getInstance().getServer().getOfflinePlayer(uuid);
@@ -135,6 +135,9 @@ public class InvseeSession implements Session {
 
             replaceEmptyPlaceholderSpots();
         });
+        if (isOffline()) {
+            save();
+        }
     }
 
     @Override
@@ -155,6 +158,16 @@ public class InvseeSession implements Session {
     @Override
     public boolean isSubscriber(@NotNull UUID whoClicked) {
         return this.subscribers.contains(whoClicked);
+    }
+
+    @Override
+    public Location getLocation() {
+        return this.location;
+    }
+
+    @Override
+    public void setLocation(Location location) {
+        this.location = location;
     }
 
     @Override

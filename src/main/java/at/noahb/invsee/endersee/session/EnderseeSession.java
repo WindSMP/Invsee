@@ -5,6 +5,7 @@ import at.noahb.invsee.common.session.Session;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
@@ -23,22 +24,21 @@ import static net.kyori.adventure.text.Component.text;
 public class EnderseeSession implements Session {
 
     private final UUID uuid;
-
     private final Set<UUID> subscribers;
-
     private final Inventory enderchest;
     private final Cache<UUID, Player> playerCache = CacheBuilder.newBuilder()
             .expireAfterAccess(10, TimeUnit.SECONDS)
             .build();
     private final ReentrantLock lock = new ReentrantLock();
+    private Location location;
 
     public EnderseeSession(OfflinePlayer offlinePlayer) {
         this.uuid = offlinePlayer.getUniqueId();
         this.subscribers = ConcurrentHashMap.newKeySet();
+        this.location = offlinePlayer.getLocation();
 
         String name = offlinePlayer.getName() == null ? "unknown" : offlinePlayer.getName();
         this.enderchest = InvseePlugin.getInstance().getServer().createInventory(this, InventoryType.ENDER_CHEST, text(name).append(text("'s enderchest")));
-
     }
 
     private Inventory getEnderChest(OfflinePlayer offline) {
@@ -67,6 +67,9 @@ public class EnderseeSession implements Session {
                 enderChest.setItem(i, this.enderchest.getItem(i));
             }
         });
+        if (isOffline()) {
+            save();
+        }
     }
 
     @Override
@@ -123,6 +126,16 @@ public class EnderseeSession implements Session {
     @Override
     public boolean isSubscriber(@NotNull UUID whoClicked) {
         return this.subscribers.contains(whoClicked);
+    }
+
+    @Override
+    public Location getLocation() {
+        return this.location;
+    }
+
+    @Override
+    public void setLocation(Location location) {
+        this.location = location;
     }
 
     @Override

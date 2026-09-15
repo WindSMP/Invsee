@@ -8,13 +8,13 @@ import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.inventory.Inventory;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public abstract class SessionManager {
-    private final Set<Session> sessions = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
 
     private final InvseePlugin instance;
 
@@ -22,18 +22,14 @@ public abstract class SessionManager {
         this.instance = instance;
     }
 
-    public synchronized void addSubscriberToSession(OfflinePlayer player, UUID subscriber) {
-        this.sessions.stream().filter(session -> session.getSubscribers().contains(subscriber))
-                .forEach(session -> session.removeSubscriber(subscriber));
+    public void addSubscriberToSession(OfflinePlayer player, UUID subscriber) {
+        for (Session session : this.sessions.values()) {
+            if (session.hasSubscriber(subscriber)) {
+                session.removeSubscriber(subscriber);
+            }
+        }
 
-        Session session = this.sessions.stream()
-                .filter(filterSession -> player.getUniqueId().equals(filterSession.getUniqueIdOfObservedPlayer()))
-                .findFirst()
-                .orElseGet(() -> {
-                    Session created = createSession(player);
-                    this.sessions.add(created);
-                    return created;
-                });
+        Session session = this.sessions.computeIfAbsent(player.getUniqueId(), uuid -> createSession(player));
 
         session.runOnObservedThread(() -> {
             session.updateSubscriberInventory();
@@ -42,38 +38,39 @@ public abstract class SessionManager {
     }
 
     public void removeSubscriberFromSession(@NotNull HumanEntity subscriber) {
-        Optional<? extends Session> first = this.sessions.stream().filter(session -> session.getSubscribers().contains(subscriber.getUniqueId())).findFirst();
-
-        first.ifPresent(session -> {
-            session.removeSubscriber(subscriber.getUniqueId());
-            if (session.getSubscribers().isEmpty()) {
-                this.sessions.remove(session);
+        UUID subscriberId = subscriber.getUniqueId();
+        for (Session session : this.sessions.values()) {
+            if (session.hasSubscriber(subscriberId)) {
+                session.removeSubscriber(subscriberId);
+                if (session.getSubscribers().isEmpty()) {
+                    this.sessions.remove(session.getUniqueIdOfObservedPlayer(), session);
+                    if (session.isOffline()) {
+                        session.save();
+                    }
+                }
             }
-            subscriber.getScheduler().run(this.instance, scheduledTask -> subscriber.closeInventory(InventoryCloseEvent.Reason.PLUGIN), null);
-        });
-
+        }
+        subscriber.getScheduler().run(this.instance, scheduledTask -> subscriber.closeInventory(InventoryCloseEvent.Reason.PLUGIN), null);
     }
 
     public void updateContent(Player player) {
-        Optional<? extends Session> optionalSession = this.sessions.stream()
-                .filter(session -> session.getUniqueIdOfObservedPlayer().equals(player.getUniqueId()))
-                .findFirst();
-
-        if (optionalSession.isPresent()) {
-            Session session = optionalSession.get();
+        UUID uuid = player.getUniqueId();
+        Session session = this.sessions.get(uuid);
+        if (session != null) {
             session.runOnObservedThread(session::updateSubscriberInventory);
             return;
         }
 
-        optionalSession = this.sessions.stream()
-                .filter(session -> session.hasSubscriber(player.getUniqueId()))
-                .findFirst();
-
-        optionalSession.ifPresent(session -> session.runOnObservedThread(session::updateObservedInventory));
+        for (Session activeSession : this.sessions.values()) {
+            if (activeSession.hasSubscriber(uuid)) {
+                activeSession.runOnObservedThread(activeSession::updateObservedInventory);
+                break;
+            }
+        }
     }
 
     public Optional<Session> getSessionForSubscriber(UUID subscriber) {
-        return sessions.stream()
+        return this.sessions.values().stream()
                 .filter(session -> session.hasSubscriber(subscriber))
                 .findFirst();
     }
@@ -84,8 +81,19 @@ public abstract class SessionManager {
         return inventory instanceof SessionInventory;
     }
 
+    public boolean hasActiveSessions() {
+        return !this.sessions.isEmpty();
+    }
+
     public boolean isSession(@NotNull UUID whoClicked) {
-        return this.sessions.stream().anyMatch(session -> session.isSubscriber(whoClicked) ||
-                session.getUniqueIdOfObservedPlayer().equals(whoClicked));
+        if (this.sessions.containsKey(whoClicked)) {
+            return true;
+        }
+        for (Session session : this.sessions.values()) {
+            if (session.hasSubscriber(whoClicked)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -22,6 +22,10 @@ public record InventoryListener(InvseePlugin instance) implements Listener {
 
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
+        if (!this.instance.getInvseeSessionManager().hasActiveSessions() &&
+            !this.instance.getEnderseeSessionManager().hasActiveSessions()) {
+            return;
+        }
         this.instance.getInvseeSessionManager().removeSubscriberFromSession(event.getPlayer());
         this.instance.getEnderseeSessionManager().removeSubscriberFromSession(event.getPlayer());
         handle(event.getPlayer());
@@ -99,6 +103,13 @@ public record InventoryListener(InvseePlugin instance) implements Listener {
 
     private void handle(LivingEntity entity) {
         if (!(entity instanceof Player player)) {
+            return;
+        }
+        if (!this.instance.getInvseeSessionManager().hasActiveSessions() &&
+            !this.instance.getEnderseeSessionManager().hasActiveSessions()) {
+            return;
+        }
+        if (!isSession(player.getUniqueId())) {
             return;
         }
         player.getScheduler().run(this.instance, scheduledTask -> this.instance.getInvseeSessionManager().updateContent(player), null);

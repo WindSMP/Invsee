@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 import static net.kyori.adventure.text.Component.text;
 import static net.kyori.adventure.text.format.NamedTextColor.RED;
@@ -43,30 +44,56 @@ public abstract class AbstractPluginCommand extends Command {
             return true;
         }
 
-        OfflinePlayer other = this.instance.getServer().getOfflinePlayer(args[0]);
-
-        if (player.getUniqueId().equals(other.getUniqueId())) {
-            player.sendMessage(text("You cannot view your own inventory.", RED));
+        // Fast path: target player is already online
+        Player onlineTarget = this.instance.getServer().getPlayerExact(args[0]);
+        if (onlineTarget != null) {
+            if (player.getUniqueId().equals(onlineTarget.getUniqueId())) {
+                player.sendMessage(text("You cannot view your own inventory.", RED));
+                return true;
+            }
+            getSessionManager().addSubscriberToSession(onlineTarget, player.getUniqueId());
             return true;
         }
 
-        if (!other.isOnline() && !other.hasPlayedBefore()) {
-            if (!InvseePlugin.getInstance().getConfig().getBoolean(Constants.LOOKUP_UNSEEN_CONFIG)) {
-                player.sendMessage(text("Player ", RED)
-                        .append(text(Objects.requireNonNullElse(other.getName(), other.getUniqueId().toString())))
-                        .append(text(" has never played on this server.")));
-                return true;
+        // Slow path: offload player lookup & disk checks to Folia's AsyncScheduler
+        this.instance.getServer().getAsyncScheduler().runNow(this.instance, task -> {
+            OfflinePlayer offlineTarget = this.instance.getServer().getOfflinePlayer(args[0]);
+            UUID targetUuid = offlineTarget.getUniqueId();
+
+            if (player.getUniqueId().equals(targetUuid)) {
+                player.getScheduler().run(this.instance, t -> player.sendMessage(text("You cannot view your own inventory.", RED)), null);
+                return;
             }
 
-            if (!player.hasPermission(Constants.LOOKUP_UNSEEN_PERMISSION)) {
-                player.sendMessage(text("Player ", RED)
-                        .append(text(Objects.requireNonNullElse(other.getName(), other.getUniqueId().toString())))
-                        .append(text(" has never played on this server.")));
-                return true;
-            }
-        }
+            if (!offlineTarget.isOnline() && !offlineTarget.hasPlayedBefore()) {
+                if (!InvseePlugin.getInstance().getConfig().getBoolean(Constants.LOOKUP_UNSEEN_CONFIG)) {
+                    String name = Objects.requireNonNullElse(offlineTarget.getName(), targetUuid.toString());
+                    player.getScheduler().run(this.instance, t -> player.sendMessage(text("Player ", RED)
+                            .append(text(name))
+                            .append(text(" has never played on this server."))), null);
+                    return;
+                }
 
-        getSessionManager().addSubscriberToSession(other, player.getUniqueId());
+                if (!player.hasPermission(Constants.LOOKUP_UNSEEN_PERMISSION)) {
+                    String name = Objects.requireNonNullElse(offlineTarget.getName(), targetUuid.toString());
+                    player.getScheduler().run(this.instance, t -> player.sendMessage(text("Player ", RED)
+                            .append(text(name))
+                            .append(text(" has never played on this server."))), null);
+                    return;
+                }
+            }
+
+            // Pre-fetch location in this async thread so regionScheduler does not block on disk reading later
+            offlineTarget.getLocation();
+
+            player.getScheduler().run(this.instance, t -> {
+                if (!player.isOnline()) {
+                    return;
+                }
+                getSessionManager().addSubscriberToSession(offlineTarget, player.getUniqueId());
+            }, null);
+        });
+
         return true;
     }
 

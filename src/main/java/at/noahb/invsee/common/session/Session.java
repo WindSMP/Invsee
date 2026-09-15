@@ -7,7 +7,6 @@ import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.ProblemReporter;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.TagValueInput;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -50,21 +49,27 @@ public interface Session extends SessionInventory {
             return;
         }
 
-        OfflinePlayer offlinePlayer = plugin.getServer().getOfflinePlayer(getUniqueIdOfObservedPlayer());
-        Location location = offlinePlayer.getLocation();
+        Location location = getLocation();
         if (location == null) {
-            location = plugin.getServer().getWorlds().get(0).getSpawnLocation();
+            OfflinePlayer offlinePlayer = plugin.getServer().getOfflinePlayer(getUniqueIdOfObservedPlayer());
+            location = offlinePlayer.getLocation();
+            if (location == null) {
+                location = plugin.getServer().getWorlds().get(0).getSpawnLocation();
+            }
+            setLocation(location);
         }
 
         plugin.getServer().getRegionScheduler().run(plugin, location, task -> runnable.run());
     }
 
-
     default void save() {
         Player cachedPlayer = getCachedPlayer();
         if (cachedPlayer != null) {
             MinecraftServer server = ((CraftServer) Bukkit.getServer()).getServer();
-            server.getPlayerList().playerIo.save(((CraftPlayer) cachedPlayer).getHandle());
+            ServerPlayer handle = ((CraftPlayer) cachedPlayer).getHandle();
+            InvseePlugin.getInstance().getServer().getAsyncScheduler().runNow(InvseePlugin.getInstance(), task -> {
+                server.getPlayerList().playerIo.save(handle);
+            });
         }
     }
 
@@ -72,16 +77,13 @@ public interface Session extends SessionInventory {
         try {
             getLock().lock();
             runnable.run();
-            if (isOffline()) {
-                save();
-            }
         } finally {
             if (getLock().isHeldByCurrentThread()) getLock().unlock();
         }
     }
 
     default boolean isOffline() {
-        return !InvseePlugin.getInstance().getServer().getOfflinePlayer(getUniqueIdOfObservedPlayer()).isOnline();
+        return InvseePlugin.getInstance().getServer().getPlayer(getUniqueIdOfObservedPlayer()) == null;
     }
 
     default Optional<Player> getPlayerOffline(OfflinePlayer offlinePlayer) {
@@ -144,4 +146,8 @@ public interface Session extends SessionInventory {
     Player getCachedPlayer();
 
     boolean isSubscriber(@NotNull UUID whoClicked);
+
+    Location getLocation();
+
+    void setLocation(Location location);
 }
