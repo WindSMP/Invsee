@@ -8,13 +8,13 @@ import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.inventory.Inventory;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public abstract class SessionManager {
-    private final Set<Session> sessions = new HashSet<>();
+    private final Set<Session> sessions = ConcurrentHashMap.newKeySet();
 
     private final InvseePlugin instance;
 
@@ -22,14 +22,23 @@ public abstract class SessionManager {
         this.instance = instance;
     }
 
-    public void addSubscriberToSession(OfflinePlayer player, UUID subscriber) {
+    public synchronized void addSubscriberToSession(OfflinePlayer player, UUID subscriber) {
         this.sessions.stream().filter(session -> session.getSubscribers().contains(subscriber))
                 .forEach(session -> session.removeSubscriber(subscriber));
 
-        this.sessions.stream()
+        Session session = this.sessions.stream()
                 .filter(filterSession -> player.getUniqueId().equals(filterSession.getUniqueIdOfObservedPlayer()))
                 .findFirst()
-                .ifPresentOrElse(session -> session.addSubscriber(subscriber), () -> createSession(player, subscriber));
+                .orElseGet(() -> {
+                    Session created = createSession(player);
+                    this.sessions.add(created);
+                    return created;
+                });
+
+        session.runOnObservedThread(() -> {
+            session.updateSubscriberInventory();
+            session.addSubscriber(subscriber);
+        });
     }
 
     public void removeSubscriberFromSession(@NotNull HumanEntity subscriber) {
@@ -51,7 +60,8 @@ public abstract class SessionManager {
                 .findFirst();
 
         if (optionalSession.isPresent()) {
-            optionalSession.get().updateSubscriberInventory();
+            Session session = optionalSession.get();
+            session.runOnObservedThread(session::updateSubscriberInventory);
             return;
         }
 
@@ -59,11 +69,7 @@ public abstract class SessionManager {
                 .filter(session -> session.hasSubscriber(player.getUniqueId()))
                 .findFirst();
 
-        optionalSession.ifPresent(Session::updateObservedInventory);
-    }
-
-    protected void addSession(Session session) {
-        this.sessions.add(session);
+        optionalSession.ifPresent(session -> session.runOnObservedThread(session::updateObservedInventory));
     }
 
     public Optional<Session> getSessionForSubscriber(UUID subscriber) {
@@ -72,7 +78,7 @@ public abstract class SessionManager {
                 .findFirst();
     }
 
-    protected abstract Session createSession(OfflinePlayer offlinePlayer, UUID subscriber);
+    protected abstract Session createSession(OfflinePlayer offlinePlayer);
 
     public boolean isSessionInventory(Inventory inventory) {
         return inventory instanceof SessionInventory;

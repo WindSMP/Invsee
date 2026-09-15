@@ -20,6 +20,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NonNull;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -39,15 +40,13 @@ public class InvseeSession implements Session {
             .expireAfterAccess(10, TimeUnit.SECONDS)
             .build();
 
-    public InvseeSession(OfflinePlayer offlinePlayer, UUID subscriber) {
+    public InvseeSession(OfflinePlayer offlinePlayer) {
         this.uuid = offlinePlayer.getUniqueId();
-        this.subscribers = new HashSet<>();
+        this.subscribers = ConcurrentHashMap.newKeySet();
 
         String name = offlinePlayer.getName() == null ? "unknown" : offlinePlayer.getName();
         this.inventory = InvseePlugin.getInstance().getServer().createInventory(this, 45, text(name).append(text("'s inventory")));
 
-        updateSubscriberInventory();
-        addSubscriber(subscriber);
     }
 
     @Override

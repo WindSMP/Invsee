@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NonNull;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -31,15 +32,13 @@ public class EnderseeSession implements Session {
             .build();
     private final ReentrantLock lock = new ReentrantLock();
 
-    public EnderseeSession(OfflinePlayer offlinePlayer, UUID subscriber) {
+    public EnderseeSession(OfflinePlayer offlinePlayer) {
         this.uuid = offlinePlayer.getUniqueId();
-        this.subscribers = new HashSet<>();
+        this.subscribers = ConcurrentHashMap.newKeySet();
 
         String name = offlinePlayer.getName() == null ? "unknown" : offlinePlayer.getName();
         this.enderchest = InvseePlugin.getInstance().getServer().createInventory(this, InventoryType.ENDER_CHEST, text(name).append(text("'s enderchest")));
 
-        updateSubscriberInventory();
-        addSubscriber(subscriber);
     }
 
     private Inventory getEnderChest(OfflinePlayer offline) {
