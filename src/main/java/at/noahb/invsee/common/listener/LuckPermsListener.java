@@ -33,9 +33,9 @@ public class LuckPermsListener {
         String permission = nodeRemoveEvent.getNode().getKey();
 
         if (Objects.equals(this.instance.getInvseeCommand().getPermission(), permission)) {
-            this.instance.getInvseeSessionManager().removeSubscriberFromSession(player);
+            this.instance.getInvseeSessionManager().removeSubscriberFromSession(player, true);
         } else if (Objects.equals(this.instance.getEnderseeCommand().getPermission(), permission)) {
-            this.instance.getEnderseeSessionManager().removeSubscriberFromSession(player);
+            this.instance.getEnderseeSessionManager().removeSubscriberFromSession(player, true);
         }
     }
 }

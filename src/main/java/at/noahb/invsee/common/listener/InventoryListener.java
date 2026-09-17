@@ -26,8 +26,12 @@ public record InventoryListener(InvseePlugin instance) implements Listener {
             !this.instance.getEnderseeSessionManager().hasActiveSessions()) {
             return;
         }
-        this.instance.getInvseeSessionManager().removeSubscriberFromSession(event.getPlayer());
-        this.instance.getEnderseeSessionManager().removeSubscriberFromSession(event.getPlayer());
+        if (this.instance.getInvseeSessionManager().isSessionInventory(event.getInventory())) {
+            this.instance.getInvseeSessionManager().removeSubscriberFromSession(event.getPlayer(), false);
+        }
+        if (this.instance.getEnderseeSessionManager().isSessionInventory(event.getInventory())) {
+            this.instance.getEnderseeSessionManager().removeSubscriberFromSession(event.getPlayer(), false);
+        }
         handle(event.getPlayer());
     }
 

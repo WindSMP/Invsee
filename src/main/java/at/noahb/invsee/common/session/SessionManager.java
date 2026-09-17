@@ -23,11 +23,7 @@ public abstract class SessionManager {
     }
 
     public void addSubscriberToSession(OfflinePlayer player, UUID subscriber) {
-        for (Session session : this.sessions.values()) {
-            if (session.hasSubscriber(subscriber)) {
-                session.removeSubscriber(subscriber);
-            }
-        }
+        removeSubscriberFromSession(subscriber);
 
         Session session = this.sessions.computeIfAbsent(player.getUniqueId(), uuid -> createSession(player));
 
@@ -37,11 +33,12 @@ public abstract class SessionManager {
         });
     }
 
-    public void removeSubscriberFromSession(@NotNull HumanEntity subscriber) {
-        UUID subscriberId = subscriber.getUniqueId();
+    public boolean removeSubscriberFromSession(@NotNull UUID subscriberId) {
+        boolean removed = false;
         for (Session session : this.sessions.values()) {
             if (session.hasSubscriber(subscriberId)) {
                 session.removeSubscriber(subscriberId);
+                removed = true;
                 if (session.getSubscribers().isEmpty()) {
                     this.sessions.remove(session.getUniqueIdOfObservedPlayer(), session);
                     if (session.isOffline()) {
@@ -50,7 +47,19 @@ public abstract class SessionManager {
                 }
             }
         }
-        subscriber.getScheduler().run(this.instance, scheduledTask -> subscriber.closeInventory(InventoryCloseEvent.Reason.PLUGIN), null);
+        return removed;
+    }
+
+    public void removeSubscriberFromSession(@NotNull HumanEntity subscriber) {
+        removeSubscriberFromSession(subscriber, false);
+    }
+
+    public boolean removeSubscriberFromSession(@NotNull HumanEntity subscriber, boolean closeInventory) {
+        boolean removed = removeSubscriberFromSession(subscriber.getUniqueId());
+        if (removed && closeInventory) {
+            subscriber.getScheduler().run(this.instance, scheduledTask -> subscriber.closeInventory(InventoryCloseEvent.Reason.PLUGIN), null);
+        }
+        return removed;
     }
 
     public void updateContent(Player player) {
@@ -78,7 +87,7 @@ public abstract class SessionManager {
     protected abstract Session createSession(OfflinePlayer offlinePlayer);
 
     public boolean isSessionInventory(Inventory inventory) {
-        return inventory instanceof SessionInventory;
+        return inventory != null && inventory.getHolder() instanceof Session session && this.sessions.containsValue(session);
     }
 
     public boolean hasActiveSessions() {
